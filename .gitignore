@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Large model weights are copied at deploy time, not committed
+models/*.pt
+models/*.pth
+models/*.onnx
+
+# Runtime artifacts
+logs/
+*.log
+state.json

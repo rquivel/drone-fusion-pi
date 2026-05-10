@@ -1,0 +1,14 @@
+# Pi 5 / DietPi compatible. Install with: pip install -r requirements.txt
+# torch wheel for ARM64 / aarch64 is pulled by ultralytics' resolver.
+
+ultralytics>=8.4,<9.0
+torch>=2.0
+torchaudio>=2.0
+opencv-python-headless>=4.8
+sounddevice>=0.4.6
+soundfile>=0.12
+numpy>=1.24
+
+# GPIO on Pi 5 needs the lgpio backend (RPi.GPIO doesn't work on Pi 5).
+gpiozero>=2.0
+lgpio>=0.2.2

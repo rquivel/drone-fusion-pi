@@ -1,0 +1,21 @@
+[Unit]
+Description=Drone Fusion (audio + image -> GPIO)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust user/group/working dir to match your DietPi install.
+User=dietpi
+Group=dietpi
+WorkingDirectory=/var/www/drone-fusion-pi
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/var/www/drone-fusion-pi/.venv/bin/python /var/www/drone-fusion-pi/main.py
+Restart=on-failure
+RestartSec=5
+
+# gpiozero with the lgpio backend uses /dev/gpiochip4 on Pi 5.
+SupplementaryGroups=gpio audio video
+
+[Install]
+WantedBy=multi-user.target
