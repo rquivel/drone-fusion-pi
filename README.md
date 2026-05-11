@@ -32,26 +32,102 @@ drone-fusion-pi/
 
 ## One-time setup on the Pi (DietPi)
 
-```bash
-# system packages
-sudo apt update
-sudo apt install -y python3-venv python3-pip \
-    portaudio19-dev libsndfile1 libgl1 libglib2.0-0 \
-    python3-lgpio
-# (libgl1/libglib2.0-0 are needed by opencv-python-headless / ultralytics deps)
+Tested on a Raspberry Pi 5 running DietPi (Debian 13 / Python 3.13). Steps
+look long because DietPi ships minimal — once these are done, redeploys
+are just `git pull` + `pip install -r requirements.txt`.
 
-# clone the project
+### 1. System packages
+
+```bash
+sudo apt update
+sudo apt install -y \
+    python3-venv python3-pip python3-dev \
+    build-essential swig liblgpio-dev \
+    portaudio19-dev libsndfile1 \
+    libgl1 libglib2.0-0
+```
+
+What each one is for:
+
+- `python3-venv` / `python3-dev`: virtualenv tooling + C headers for native extensions
+- `build-essential`: gcc, make, libc-dev — needed because `lgpio` has no
+  prebuilt wheel for Python 3.13 / aarch64 and pip compiles it from source
+- `swig`: `lgpio`'s build step generates its Python bindings with SWIG
+- `liblgpio-dev`: the underlying C library that the Python `lgpio` package
+  wraps — without it the linker fails with `cannot find -llgpio`
+- `portaudio19-dev` + `libsndfile1`: required by `sounddevice` / `soundfile`
+- `libgl1` + `libglib2.0-0`: shared libraries pulled in by `opencv-python`
+
+### 2. Clone the project
+
+```bash
 sudo mkdir -p /var/www && sudo chown "$USER" /var/www
 cd /var/www
-git clone <your-remote-url> drone-fusion-pi
+git clone https://github.com/<user>/drone-fusion-pi.git
 cd drone-fusion-pi
+```
 
-# python env
-python3 -m venv .venv
-source .venv/bin/activate
+Use the **HTTPS** URL (not `git@github.com:...`), unless you've already
+added an SSH key to your GitHub account. SSH requires authentication even
+for public repos; HTTPS doesn't for read-only clones.
+
+### 3. Python virtual environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install --upgrade pip wheel
+```
+
+If your shell prompt ever loses the `(venv)` prefix (new terminal, etc.),
+just call the binaries directly — `./venv/bin/python` and `./venv/bin/pip`
+work the same whether or not `activate` has been sourced. This avoids the
+`error: externally-managed-environment` confusion if you forget to activate.
+
+### 4. Install PyTorch (CPU-only build)
+
+**Important:** PyTorch's `torch>=2.7` aarch64 wheels are Jetson-targeted
+and pull ~2.5 GB of NVIDIA CUDA libraries that won't run on a Pi 5. We need
+the older CPU-only build. The last release that supports Python 3.13 and
+has CPU-only aarch64 wheels is 2.6.x.
+
+```bash
+pip install "torch==2.6.*" "torchaudio==2.6.*" "torchvision==0.21.*"
+```
+
+Verify it actually imports without trying to load CUDA libraries:
+
+```bash
+python -c "import torch; print('torch', torch.__version__, 'cuda:', torch.cuda.is_available())"
+# Expected: torch 2.6.0 cuda: False
+```
+
+If you get `OSError: libcudart.so.13: cannot open shared object file`, you
+ended up with a `>=2.7` build by mistake — `pip uninstall -y torch torchaudio
+torchvision` and rerun the pinned install above.
+
+### 5. Install the rest
+
+```bash
 pip install -r requirements.txt
 ```
+
+Most of this comes from prebuilt aarch64 wheels and is fast. `lgpio` is
+compiled from source (~30 seconds). If you see
+`error: command 'aarch64-linux-gnu-gcc' failed: No such file or directory`,
+step 1's `build-essential` wasn't installed.
+
+### 6. Sanity check before continuing
+
+```bash
+python scripts/sanity_check.py
+python scripts/flash_leds.py --cycles 2
+```
+
+`sanity_check.py` covers four sections (model weights, audio, camera, GPIO).
+`flash_leds.py` cycles all three outputs so you can visually confirm each
+LED + resistor is wired to the right pin. Watch the startup log lines —
+you want to see `opened hardware LED on GPIO17 (audio)`, not `[mock]`.
 
 ## Copy in the trained weights
 
@@ -87,22 +163,12 @@ scp /var/www/detectfpvdrones/runs/detect/train_v3/weights/best.pt \
     pi@<host>:/var/www/drone-fusion-pi/models/yolo_best.pt
 ```
 
-## Sanity check before running the full service
-
-```bash
-source .venv/bin/activate
-python scripts/sanity_check.py
-```
-
-Expected output covers all four sections (model weights, audio, camera,
-GPIO). Any FAIL line is something to fix before continuing.
-
 ## Run it
 
 Foreground (good for first run / watching logs):
 
 ```bash
-source .venv/bin/activate
+source venv/bin/activate
 python main.py
 ```
 
@@ -161,3 +227,41 @@ if you're switching anything bigger than an LED + resistor.
 This project uses `gpiozero` with the `lgpio` backend. Older `RPi.GPIO`
 is **not** supported on the Pi 5 (no `/dev/gpiomem`). The included
 `requirements.txt` and the apt step above install everything you need.
+
+## Troubleshooting
+
+Things you may hit on a fresh DietPi install, with the fix that worked:
+
+**`ModuleNotFoundError: No module named 'cv2'` after `source venv/bin/activate`.**
+A common cause is a venv that was created in a different folder and then
+moved — `activate` hard-codes the absolute path. Recreate the venv from
+scratch (`rm -rf venv && python3 -m venv venv && source venv/bin/activate
+&& pip install -r requirements.txt`), or invoke `./venv/bin/python` directly.
+
+**`error: externally-managed-environment` from pip.**
+You're not inside the venv. Either run `source venv/bin/activate` first or
+call `./venv/bin/pip ...` directly.
+
+**Pip downloads ~2.5 GB of `nvidia-*` / `cuda-toolkit` packages.**
+You ended up on a torch >=2.7 aarch64 wheel, which is a Jetson build with
+mandatory CUDA dependencies. Uninstall and pin to 2.6:
+```bash
+pip uninstall -y torch torchaudio torchvision
+pip install "torch==2.6.*" "torchaudio==2.6.*" "torchvision==0.21.*"
+```
+
+**`error: command 'swig' failed: No such file or directory`** while building
+`lgpio`. Run `sudo apt install -y swig python3-dev`.
+
+**`error: command 'aarch64-linux-gnu-gcc' failed: No such file or directory`**
+while building `lgpio`. Run `sudo apt install -y build-essential`.
+
+**`/usr/bin/ld: cannot find -llgpio`** while building `lgpio`. The Python
+package is just a SWIG wrapper; the C library needs to be installed
+separately. Run `sudo apt install -y liblgpio-dev`.
+
+**`flash_leds.py` runs but no LEDs light up.**
+Look at the startup log. If you see `falling back to mock GPIO for audio
+(reason: ...)`, the reason tells you why `gpiozero` couldn't open the
+hardware. Common causes: `lgpio` not installed, not running as root (or
+not in the `gpio` group), or another process is holding `/dev/gpiochip4`.

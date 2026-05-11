@@ -1,9 +1,17 @@
 # Pi 5 / DietPi compatible. Install with: pip install -r requirements.txt
-# torch wheel for ARM64 / aarch64 is pulled by ultralytics' resolver.
+# See README "One-time setup" for the full step-by-step including apt
+# packages — this file alone won't bootstrap a fresh DietPi.
 
 ultralytics>=8.4,<9.0
-torch>=2.0
-torchaudio>=2.0
+
+# PyTorch 2.7+ aarch64 wheels are Jetson-targeted CUDA builds that pull
+# ~2.5 GB of NVIDIA libraries — useless on a Pi 5 and they fail to import
+# without the matching libcudart on disk. Pin to <2.7 so pip picks the
+# older CPU-only aarch64 wheel. (On x86_64 this constraint is also fine —
+# torch 2.6 still ships full CUDA support on that platform.)
+torch>=2.0,<2.7
+torchaudio>=2.0,<2.7
+
 opencv-python-headless>=4.8
 sounddevice>=0.4.6
 soundfile>=0.12
