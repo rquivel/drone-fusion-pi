@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 cd /root/drone-fusion-pi
 git pull                          # after you push from the Mac
 sudo systemctl stop drone-fusion.service

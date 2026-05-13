@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 sudo systemctl stop drone-fusion.service     # mic is held by the service
 cd /root/drone-fusion-pi
 source venv/bin/activate
