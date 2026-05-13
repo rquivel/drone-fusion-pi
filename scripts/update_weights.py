@@ -38,15 +38,29 @@ import config as C   # noqa: E402
 
 # -- Default source paths (sibling folders to this project) ----------------
 DEFAULT_AUDIO_SRC = PROJECT_ROOT.parent / "DroneAudioDataset" / "checkpoints" / "best.pt"
-DEFAULT_YOLO_SRC = (
-    PROJECT_ROOT.parent
-    / "detectfpvdrones"
-    / "runs"
-    / "detect"
-    / "train_v3"
-    / "weights"
-    / "best.pt"
-)
+
+_YOLO_RUNS_DIR = PROJECT_ROOT.parent / "detectfpvdrones" / "runs" / "detect"
+
+
+def _latest_yolo_best() -> Path:
+    """Return the most recently modified best.pt across runs/detect/*/weights/.
+
+    Falls back to the train_v3 path if no runs are found yet, so first-time
+    setups still have a reasonable default.
+    """
+    fallback = _YOLO_RUNS_DIR / "train_v3" / "weights" / "best.pt"
+    if not _YOLO_RUNS_DIR.is_dir():
+        return fallback
+    candidates = [
+        p for p in _YOLO_RUNS_DIR.glob("*/weights/best.pt")
+        if p.is_file()
+    ]
+    if not candidates:
+        return fallback
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+DEFAULT_YOLO_SRC = _latest_yolo_best()
 
 
 def sha256(path: Path, chunk: int = 1 << 20) -> str:
