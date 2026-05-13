@@ -46,8 +46,8 @@ AUDIO_F_MAX = AUDIO_SAMPLE_RATE // 2
 # Image detection
 # ---------------------------------------------------------------------------
 CAMERA_INDEX = 0                 # USB camera (matches your test_camera())
-CAMERA_WIDTH = 640
-CAMERA_HEIGHT = 480
+CAMERA_WIDTH = 416
+CAMERA_HEIGHT = 320
 IMAGE_FRAME_STRIDE = 3           # run YOLO every Nth frame to keep CPU sane
 IMAGE_THRESHOLD = 0.30           # 30% per the spec
 IMAGE_DRONE_CLASS_NAMES = ("drone",)   # YOLO model has classes drone/bird/person
