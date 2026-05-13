@@ -1,6 +1,9 @@
 [Unit]
 Description=Drone Fusion (audio + image -> GPIO)
-After=network-online.target sound.target
+# If the LED self-test unit is enabled, wait for it to finish before
+# claiming the GPIO pins. Soft dependency: if the self-test unit is
+# not installed, the main service still starts normally.
+After=network-online.target sound.target drone-fusion-selftest.service
 Wants=network-online.target
 
 [Service]
@@ -10,7 +13,7 @@ User=dietpi
 Group=dietpi
 WorkingDirectory=/var/www/drone-fusion-pi
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/var/www/drone-fusion-pi/.venv/bin/python /var/www/drone-fusion-pi/main.py
+ExecStart=/var/www/drone-fusion-pi/venv/bin/python /var/www/drone-fusion-pi/main.py
 Restart=on-failure
 RestartSec=5
 

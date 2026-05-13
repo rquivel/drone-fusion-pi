@@ -1,0 +1,24 @@
+[Unit]
+Description=Drone Fusion LED self-test (blinks all three GPIOs once at boot)
+After=network-online.target sound.target
+Wants=network-online.target
+# Run before the main service so the LEDs are visibly cycled while the
+# main process is still warming up its models. The main service has
+# After=drone-fusion-selftest.service to wait for this to finish.
+Before=drone-fusion.service
+
+[Service]
+Type=oneshot
+User=dietpi
+Group=dietpi
+WorkingDirectory=/var/www/drone-fusion-pi
+Environment=PYTHONUNBUFFERED=1
+# One full cycle (5 states * 1 second each) then exit cleanly so the
+# main service can claim the pins.
+ExecStart=/var/www/drone-fusion-pi/venv/bin/python \
+    /var/www/drone-fusion-pi/scripts/flash_leds.py --cycles 1
+RemainAfterExit=no
+SupplementaryGroups=gpio
+
+[Install]
+WantedBy=multi-user.target

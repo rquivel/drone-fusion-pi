@@ -195,6 +195,36 @@ journalctl -u drone-fusion.service -f
 The unit file assumes `User=dietpi` and `WorkingDirectory=/var/www/drone-fusion-pi`.
 Edit those if your DietPi user is different.
 
+### Optional: LED self-test on every boot
+
+`systemd/drone-fusion-selftest.service` is a one-shot unit that runs
+`scripts/flash_leds.py --cycles 1` during boot — about 5 seconds of LED
+cycling so you can visually confirm the hardware is alive before the
+main detector takes over. The main service has `After=drone-fusion-selftest.service`
+so it waits for the test to finish before claiming the GPIO pins.
+
+```bash
+sudo cp systemd/drone-fusion-selftest.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable drone-fusion-selftest.service
+```
+
+To disable later: `sudo systemctl disable drone-fusion-selftest.service`.
+The main service still works whether or not the self-test unit is installed.
+
+### Manually checking the LEDs after the service is running
+
+GPIO pins are exclusive — while `drone-fusion.service` is up it owns
+GPIO 17/27/22 and a manual `flash_leds.py` will fall back to mock mode.
+To run the LED test by hand:
+
+```bash
+sudo systemctl stop drone-fusion.service
+source venv/bin/activate
+python scripts/flash_leds.py --cycles 2
+sudo systemctl start drone-fusion.service
+```
+
 ## Tuning
 
 Most tweaks live in `config.py`:
