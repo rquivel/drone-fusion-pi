@@ -174,12 +174,38 @@ python main.py
 
 Useful flags while debugging:
 
-| Flag           | What it does                                   |
-|----------------|------------------------------------------------|
-| `--mock-gpio`  | Skip real GPIO, just log transitions           |
-| `--no-image`   | Audio detector only (e.g. while testing mic)   |
-| `--no-audio`   | Image detector only (e.g. while testing camera)|
-| `--device cpu` | Force CPU inference (default; Pi 5 has no CUDA)|
+| Flag                   | What it does                                                |
+|------------------------|-------------------------------------------------------------|
+| `--mock-gpio`          | Skip real GPIO, just log transitions                        |
+| `--no-image`           | Audio detector only (e.g. while testing mic)                |
+| `--no-audio`           | Image detector only (e.g. while testing camera)             |
+| `--device cpu`         | Force CPU inference (default; Pi 5 has no CUDA)             |
+| `--stream-port 8000`   | Live MJPEG of annotated camera frames at http://&lt;pi&gt;:8000/ |
+
+### Live video stream (debug only)
+
+Pass `--stream-port 8000` to expose a tiny HTTP server that broadcasts
+each YOLO-annotated frame as a multipart-JPEG stream. From your laptop on
+the same LAN, open `http://<pi-ip>:8000/` in any browser to see the
+camera feed with detection boxes drawn live.
+
+```bash
+# stop the systemd service while testing so it doesn't fight you for the camera
+sudo systemctl stop drone-fusion.service
+source venv/bin/activate
+python main.py --stream-port 8000
+# laptop: visit http://<pi-ip>:8000/
+```
+
+Endpoints:
+
+- `http://<pi-ip>:8000/`            — HTML page that embeds the stream
+- `http://<pi-ip>:8000/stream.mjpg` — raw multipart-JPEG stream (works in `vlc`, `ffplay`, browsers)
+- `http://<pi-ip>:8000/snapshot.jpg` — a single most-recent frame
+
+No auth — keep this on a trusted LAN only. The server adds ~30% CPU on a
+Pi 5 because every analyzed frame is now plotted + encoded as JPEG; don't
+leave `--stream-port` on in production.
 
 ## Run as a service (auto-start on boot)
 

@@ -6,9 +6,11 @@ hardware resources are released.
 
 Usage:
     python main.py
-    python main.py --mock-gpio          # bench-test on a non-Pi machine
-    python main.py --no-image           # audio only (e.g. while debugging)
-    python main.py --no-audio           # image only
+    python main.py --mock-gpio              # bench-test on a non-Pi machine
+    python main.py --no-image               # audio only (e.g. while debugging)
+    python main.py --no-audio               # image only
+    python main.py --stream-port 8000       # live MJPEG of annotated frames at
+                                            # http://<pi>:8000/  (debug only)
 """
 from __future__ import annotations
 
@@ -40,6 +42,10 @@ def main():
                     help="Disable the image detector (audio only).")
     ap.add_argument("--device", default="cpu",
                     help="Inference device: cpu | cuda | mps (default: cpu).")
+    ap.add_argument("--stream-port", type=int, default=None,
+                    help="If set, also serve annotated camera frames over MJPEG "
+                         "at http://<pi>:<port>/stream.mjpg . Off by default "
+                         "(adds ~30%% CPU; do not leave on in production).")
     args = ap.parse_args()
 
     setup_logging()
@@ -57,6 +63,13 @@ def main():
     gpio = GpioController(mock=args.mock_gpio)
     gpio.start()
 
+    # Optional debug video stream
+    stream = None
+    if args.stream_port is not None and not args.no_image:
+        from debug_stream import DebugStream
+        stream = DebugStream(port=args.stream_port)
+        stream.start()
+
     detectors = []
     if not args.no_audio:
         from audio_detector import AudioDetector
@@ -65,7 +78,11 @@ def main():
         detectors.append(ad)
     if not args.no_image:
         from image_detector import ImageDetector
-        idt = ImageDetector(on_detection=gpio.report_image, device=args.device)
+        idt = ImageDetector(
+            on_detection=gpio.report_image,
+            device=args.device,
+            on_frame=(stream.push_jpeg if stream is not None else None),
+        )
         idt.start()
         detectors.append(idt)
 
@@ -92,6 +109,9 @@ def main():
             d.stop()
         for d in detectors:
             d.join(timeout=3.0)
+        if stream is not None:
+            log.info("stopping debug stream...")
+            stream.stop()
         log.info("stopping GPIO controller...")
         gpio.stop()
         log.info("bye")

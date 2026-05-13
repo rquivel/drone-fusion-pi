@@ -3,12 +3,15 @@
 Opens the USB camera, runs the trained YOLO model every IMAGE_FRAME_STRIDE
 frames, and calls on_detection(conf) when a 'drone' class box is seen at or
 above IMAGE_THRESHOLD.
+
+If on_frame is provided, every analyzed frame's annotated JPEG bytes are
+pushed there (used by the optional debug stream).
 """
 from __future__ import annotations
 
 import logging
 import threading
-from typing import Callable
+from typing import Callable, Optional
 
 import cv2
 from ultralytics import YOLO
@@ -19,9 +22,12 @@ log = logging.getLogger("image")
 
 
 class ImageDetector(threading.Thread):
-    def __init__(self, on_detection: Callable[[float], None], device: str = "cpu"):
+    def __init__(self, on_detection: Callable[[float], None],
+                 device: str = "cpu",
+                 on_frame: Optional[Callable[[bytes], None]] = None):
         super().__init__(daemon=True, name="image-detector")
         self.on_detection = on_detection
+        self.on_frame = on_frame
         self.device = device
         self._stop = threading.Event()
 
@@ -91,6 +97,19 @@ class ImageDetector(threading.Thread):
                     self.on_detection(best_drone_conf)
                 else:
                     log.debug("no drone in frame")
+
+                # Debug stream: encode + push the annotated frame.
+                if self.on_frame is not None and results:
+                    annotated = results[0].plot()
+                    ok, jpeg = cv2.imencode(
+                        ".jpg", annotated,
+                        [cv2.IMWRITE_JPEG_QUALITY, 75],
+                    )
+                    if ok:
+                        try:
+                            self.on_frame(jpeg.tobytes())
+                        except Exception:
+                            log.debug("on_frame callback raised", exc_info=True)
         except Exception:
             log.exception("image detector crashed")
             raise
