@@ -1,0 +1,7 @@
+#!/bin/sh
+sudo systemctl stop drone-fusion.service     # mic is held by the service
+cd /root/drone-fusion-pi
+source venv/bin/activate
+python scripts/record_audio_sample.py        # 60s by default
+# defaults to recordings/<timestamp>/
+sudo systemctl start drone-fusion.service
