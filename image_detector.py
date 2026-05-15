@@ -47,6 +47,12 @@ class ImageDetector(threading.Thread):
             )
         log.info("drone class ids: %s (from %s)", self.drone_class_ids, names)
 
+        # Track-confirmation state. Maps each YOLO track id (int) to the
+        # number of consecutive analyzed frames it has been seen on. A track
+        # has to clear IMAGE_MIN_TRACK_FRAMES before it's reported.
+        self._track_seen: dict[int, int] = {}
+        self._track_missing: dict[int, int] = {}
+
     def run(self):
         cap = cv2.VideoCapture(C.CAMERA_INDEX)
         if C.CAMERA_WIDTH:
@@ -74,29 +80,98 @@ class ImageDetector(threading.Thread):
                 if frame_idx % C.IMAGE_FRAME_STRIDE != 0:
                     continue
 
-                results = self.model.predict(
-                    source=frame,
-                    conf=C.IMAGE_THRESHOLD,
-                    imgsz=C.YOLO_IMG_SIZE,
-                    device=self.device,
-                    verbose=False,
-                )
-                best_drone_conf = 0.0
+                if C.IMAGE_USE_TRACKING:
+                    results = self.model.track(
+                        source=frame,
+                        conf=C.IMAGE_THRESHOLD,
+                        imgsz=C.YOLO_IMG_SIZE,
+                        device=self.device,
+                        persist=True,
+                        verbose=False,
+                    )
+                else:
+                    results = self.model.predict(
+                        source=frame,
+                        conf=C.IMAGE_THRESHOLD,
+                        imgsz=C.YOLO_IMG_SIZE,
+                        device=self.device,
+                        verbose=False,
+                    )
+
+                # Collect (track_id_or_None, conf) for every drone detection
+                # in this frame so we can both report best-confidence and
+                # update track-confirmation state.
+                frame_drone_dets: list[tuple[int | None, float]] = []
                 for r in results:
                     if r.boxes is None or len(r.boxes) == 0:
                         continue
-                    for cls_id, conf in zip(
-                        r.boxes.cls.cpu().numpy().astype(int),
-                        r.boxes.conf.cpu().numpy().astype(float),
-                    ):
-                        if cls_id in self.drone_class_ids and conf > best_drone_conf:
-                            best_drone_conf = conf
+                    cls_arr = r.boxes.cls.cpu().numpy().astype(int)
+                    conf_arr = r.boxes.conf.cpu().numpy().astype(float)
+                    if r.boxes.id is not None:
+                        id_arr = r.boxes.id.cpu().numpy().astype(int)
+                    else:
+                        id_arr = [None] * len(cls_arr)
+                    for cls_id, conf, tid in zip(cls_arr, conf_arr, id_arr):
+                        if cls_id in self.drone_class_ids:
+                            frame_drone_dets.append(
+                                (None if tid is None else int(tid), float(conf))
+                            )
 
-                if best_drone_conf >= C.IMAGE_THRESHOLD:
-                    log.info("DRONE detected (conf=%.3f)", best_drone_conf)
-                    self.on_detection(best_drone_conf)
+                # Track confirmation: only fire on_detection when a track
+                # has persisted for IMAGE_MIN_TRACK_FRAMES analyzed frames.
+                if C.IMAGE_USE_TRACKING:
+                    seen_ids_this_frame = {tid for tid, _ in frame_drone_dets
+                                           if tid is not None}
+
+                    # Increment seen counter for tracks present this frame.
+                    for tid in seen_ids_this_frame:
+                        self._track_seen[tid] = self._track_seen.get(tid, 0) + 1
+                        self._track_missing.pop(tid, None)
+
+                    # Increment missing counter for tracks that didn't show
+                    # this frame, and forget tracks missing for too long.
+                    for tid in list(self._track_seen):
+                        if tid in seen_ids_this_frame:
+                            continue
+                        self._track_missing[tid] = self._track_missing.get(tid, 0) + 1
+                        if self._track_missing[tid] >= C.IMAGE_TRACK_FORGET_FRAMES:
+                            self._track_seen.pop(tid, None)
+                            self._track_missing.pop(tid, None)
+
+                    # Confirmed = at least MIN frames seen. Pick best confidence
+                    # among confirmed tracks present this frame.
+                    confirmed_conf = 0.0
+                    confirmed_count = 0
+                    for tid, conf in frame_drone_dets:
+                        if tid is None:
+                            continue
+                        if self._track_seen.get(tid, 0) >= C.IMAGE_MIN_TRACK_FRAMES:
+                            confirmed_count += 1
+                            if conf > confirmed_conf:
+                                confirmed_conf = conf
+
+                    if confirmed_count > 0:
+                        log.info("DRONE confirmed (conf=%.3f, tracks=%d)",
+                                 confirmed_conf, confirmed_count)
+                        self.on_detection(confirmed_conf)
+                    else:
+                        pending = sum(
+                            1 for tid, _ in frame_drone_dets
+                            if tid is not None
+                            and 0 < self._track_seen.get(tid, 0) < C.IMAGE_MIN_TRACK_FRAMES
+                        )
+                        if pending:
+                            log.debug("drone pending confirmation (%d track(s))", pending)
+                        else:
+                            log.debug("no drone in frame")
                 else:
-                    log.debug("no drone in frame")
+                    # No tracking: legacy behavior — fire on any single-frame hit.
+                    best_drone_conf = max((c for _, c in frame_drone_dets), default=0.0)
+                    if best_drone_conf >= C.IMAGE_THRESHOLD:
+                        log.info("DRONE detected (conf=%.3f)", best_drone_conf)
+                        self.on_detection(best_drone_conf)
+                    else:
+                        log.debug("no drone in frame")
 
                 # Debug stream: encode + push the annotated frame.
                 if self.on_frame is not None and results:

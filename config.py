@@ -53,6 +53,18 @@ IMAGE_THRESHOLD = 0.30           # 30% per the spec
 IMAGE_DRONE_CLASS_NAMES = ("drone",)   # YOLO model has classes drone/bird/person
 YOLO_IMG_SIZE = 416              # smaller = faster on Pi 5; 640 is YOLO default
 
+# --- Track confirmation -----------------------------------------------------
+# When True, the detector uses YOLO's ByteTrack/BoTSORT to assign persistent
+# IDs to each box across frames, and only fires on_detection() once a track
+# has been observed for IMAGE_MIN_TRACK_FRAMES consecutive analyzed frames.
+# This trades a small startup delay (the track must be seen N times) for a
+# dramatic drop in false positives — single-frame flukes don't survive.
+IMAGE_USE_TRACKING = True
+IMAGE_MIN_TRACK_FRAMES = 3       # consecutive analyzed frames a track must
+                                 # persist before it counts as a confirmed drone
+IMAGE_TRACK_FORGET_FRAMES = 3    # after a track is missing for this many
+                                 # analyzed frames, its counter resets
+
 # ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
