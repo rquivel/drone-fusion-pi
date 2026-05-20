@@ -13,7 +13,7 @@ User=dietpi
 Group=dietpi
 WorkingDirectory=/var/www/drone-fusion-pi
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/var/www/drone-fusion-pi/venv/bin/python /var/www/drone-fusion-pi/main.py
+ExecStart=/var/www/drone-fusion-pi/venv/bin/python /var/www/drone-fusion-pi/main.py --no-audio
 Restart=on-failure
 RestartSec=5
 
